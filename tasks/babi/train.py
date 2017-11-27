@@ -21,7 +21,8 @@ def load(path):
 
 def onehot(index, size):
     vec = np.zeros(size, dtype=np.float32)
-    vec[index] = 1.0
+    # import pdb; pdb.set_trace()
+    vec[int(index)] = 1.0
     return vec
 
 def prepare_sample(sample, target_code, word_space_size):
@@ -55,7 +56,7 @@ if __name__ == '__main__':
 
     llprint("Loading Data ... ")
     lexicon_dict = load(os.path.join(data_dir, 'lexicon-dict.pkl'))
-    data = load(os.path.join(data_dir, 'train', 'train.pkl'))
+    data = load(os.path.join(data_dir, 'train', 'qa9_simple-negation_train.txt.pkl'))
     llprint("Done!\n")
 
     batch_size = 1
@@ -90,7 +91,7 @@ if __name__ == '__main__':
             llprint("Building Computational Graph ... ")
 
             optimizer = tf.train.RMSPropOptimizer(learning_rate, momentum=momentum)
-            summerizer = tf.train.SummaryWriter(tb_logs_dir, session.graph)
+            summerizer = tf.summary.FileWriter(tb_logs_dir, session.graph)
 
             ncomputer = DNC(
                 RecurrentController,
@@ -107,7 +108,7 @@ if __name__ == '__main__':
 
             loss_weights = tf.placeholder(tf.float32, [batch_size, None, 1])
             loss = tf.reduce_mean(
-                loss_weights * tf.nn.softmax_cross_entropy_with_logits(output, ncomputer.target_output)
+                loss_weights * tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=ncomputer.target_output)
             )
 
             summeries = []
@@ -118,19 +119,19 @@ if __name__ == '__main__':
                     gradients[i] = (tf.clip_by_value(grad, -10, 10), var)
             for (grad, var) in gradients:
                 if grad is not None:
-                    summeries.append(tf.histogram_summary(var.name + '/grad', grad))
+                    summeries.append(tf.summary.histogram(var.name + '/grad', grad))
 
             apply_gradients = optimizer.apply_gradients(gradients)
 
-            summeries.append(tf.scalar_summary("Loss", loss))
+            summeries.append(tf.summary.scalar("Loss", loss))
 
-            summerize_op = tf.merge_summary(summeries)
+            summerize_op = tf.summary.merge(summeries)
             no_summerize = tf.no_op()
 
             llprint("Done!\n")
 
             llprint("Initializing Variables ... ")
-            session.run(tf.initialize_all_variables())
+            session.run(tf.global_variables_initializer())
             llprint("Done!\n")
 
             if from_checkpoint is not None:
@@ -158,7 +159,6 @@ if __name__ == '__main__':
 
                     summerize = (i % 100 == 0)
                     take_checkpoint = (i != 0) and (i % end == 0)
-
                     loss_value, _, summary = session.run([
                         loss,
                         apply_gradients,
@@ -171,7 +171,8 @@ if __name__ == '__main__':
                     })
 
                     last_100_losses.append(loss_value)
-                    summerizer.add_summary(summary, i)
+                    if summerize:
+                        summerizer.add_summary(summary, i)
 
                     if summerize:
                         llprint("\n\tAvg. Cross-Entropy: %.7f\n" % (np.mean(last_100_losses)))
