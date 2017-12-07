@@ -93,7 +93,7 @@ class BaseController:
 
     def get_nn_output_size(self):
         """
-        retrives the output size of the defined neural network
+        retrieves the output size of the defined neural network
 
         Returns: int
             the output's size
@@ -190,7 +190,7 @@ class BaseController:
         """
 
         flat_read_vectors = tf.reshape(last_read_vectors, (-1, self.word_size * self.read_heads))
-        complete_input = tf.concat([X, flat_read_vectors],1)
+        complete_input = tf.concat([X, flat_read_vectors], 1)
         nn_output, nn_state = None, None
 
         if self.has_recurrent_nn:
@@ -210,7 +210,7 @@ class BaseController:
 
     def final_output(self, pre_output, new_read_vectors):
         """
-        returns the final output by taking rececnt memory changes into account
+        returns the final output by taking recent memory changes into account
 
         Parameters:
         ----------

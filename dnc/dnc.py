@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import LSTMStateTuple
-from memory import Memory
+from sparse_memory import SparseMemory
 import utility
 import os
 
@@ -40,7 +40,7 @@ class DNC:
         self.read_heads = memory_read_heads
         self.batch_size = batch_size
 
-        self.memory = Memory(self.words_num, self.word_size, self.read_heads, self.batch_size)
+        self.memory = SparseMemory(self.words_num, self.word_size, self.read_heads, self.batch_size)
         self.controller = controller_class(self.input_size, self.output_size, self.read_heads, self.word_size, self.batch_size)
 
         # input data placeholders
@@ -68,7 +68,7 @@ class DNC:
             memory_view: dict
         """
 
-        last_read_vectors = memory_state[6]
+        last_read_vectors = memory_state[7]
         pre_output, interface, nn_state = None, None, None
 
         if self.controller.has_recurrent_nn:
@@ -76,9 +76,10 @@ class DNC:
         else:
             pre_output, interface = self.controller.process_input(step, last_read_vectors)
 
-        usage_vector, write_weighting, memory_matrix, link_matrix, precedence_vector = self.memory.write(
-            memory_state[0], memory_state[1], memory_state[5],
-            memory_state[4], memory_state[2], memory_state[3],
+        usage_vector, write_weighting, memory_matrix, forward_link_matrix, backward_link_matrix, precedence_vector = self.memory.write(
+            memory_state[0], memory_state[1], memory_state[6],
+            memory_state[5], memory_state[2],
+            memory_state[3], memory_state[4],
             interface['write_key'],
             interface['write_strength'],
             interface['free_gates'],
@@ -90,10 +91,11 @@ class DNC:
 
         read_weightings, read_vectors = self.memory.read(
             memory_matrix,
-            memory_state[5],
+            memory_state[6],
             interface['read_keys'],
             interface['read_strengths'],
-            link_matrix,
+            forward_link_matrix,
+            backward_link_matrix,
             interface['read_modes'],
         )
 
@@ -103,7 +105,8 @@ class DNC:
             memory_matrix,
             usage_vector,
             precedence_vector,
-            link_matrix,
+            forward_link_matrix,
+            backward_link_matrix,
             write_weighting,
             read_weightings,
             read_vectors,
@@ -147,23 +150,23 @@ class DNC:
         # update memory parameters
 
         new_controller_state = tf.zeros(1)
-        new_memory_state = tuple(output_list[0:7])
+        new_memory_state = tuple(output_list[0:8])
 
-        new_controller_state = LSTMStateTuple(output_list[11], output_list[12])
+        new_controller_state = LSTMStateTuple(output_list[12], output_list[13])
 
-        outputs = outputs.write(time, output_list[7])
+        outputs = outputs.write(time, output_list[8])
 
         # collecting memory view for the current step
-        free_gates = free_gates.write(time, output_list[8])
-        allocation_gates = allocation_gates.write(time, output_list[9])
-        write_gates = write_gates.write(time, output_list[10])
-        read_weightings = read_weightings.write(time, output_list[5])
-        write_weightings = write_weightings.write(time, output_list[4])
+        free_gates = free_gates.write(time, output_list[9])
+        allocation_gates = allocation_gates.write(time, output_list[10])
+        write_gates = write_gates.write(time, output_list[11])
+        read_weightings = read_weightings.write(time, output_list[12])
+        write_weightings = write_weightings.write(time, output_list[5])
         usage_vectors = usage_vectors.write(time, output_list[1])
 
         return (
             time + 1, new_memory_state, outputs,
-            free_gates,allocation_gates, write_gates,
+            free_gates, allocation_gates, write_gates,
             read_weightings, write_weightings,
             usage_vectors, new_controller_state
         )

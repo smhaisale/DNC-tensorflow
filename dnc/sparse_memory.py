@@ -2,9 +2,9 @@ import tensorflow as tf
 import numpy as np
 import utility
 
-class Memory:
+class SparseMemory:
 
-    def __init__(self, words_num=256, word_size=64, read_heads=4, batch_size=1):
+    def __init__(self, words_num=256, word_size=64, read_heads=4, batch_size=1, k=8):
         """
         constructs a memory matrix with read heads and a write head as described
         in the DNC paper
@@ -27,6 +27,7 @@ class Memory:
         self.word_size = word_size
         self.read_heads = read_heads
         self.batch_size = batch_size
+        self.K = k
 
         # a words_num x words_num identity matrix
         self.I = tf.constant(np.identity(words_num, dtype=np.float32))
@@ -48,7 +49,8 @@ class Memory:
             tf.fill([self.batch_size, self.words_num, self.word_size], 1e-6),   # initial memory matrix
             tf.zeros([self.batch_size, self.words_num, ]),                      # initial usage vector
             tf.zeros([self.batch_size, self.words_num, ]),                      # initial precedence vector
-            tf.zeros([self.batch_size, self.words_num, self.words_num]),        # initial link matrix
+            tf.zeros([self.batch_size, self.words_num, self.K]),                # initial forward_link matrix
+            tf.zeros([self.batch_size, self.words_num, self.K]),                # initial backward_link matrix
             tf.fill([self.batch_size, self.words_num, ], 1e-6),                 # initial write weighting
             tf.fill([self.batch_size, self.words_num, self.read_heads], 1e-6),  # initial read weightings
             tf.fill([self.batch_size, self.word_size, self.read_heads], 1e-6),  # initial read vectors
@@ -131,8 +133,8 @@ class Memory:
             flat_unordered_allocation_weighting
         )
 
-        packed_weightings = flat_ordered_weightings.stack()
-        return tf.reshape(packed_weightings, (self.batch_size, self.words_num))
+        packed_wightings = flat_ordered_weightings.stack()
+        return tf.reshape(packed_wightings, (self.batch_size, self.words_num))
 
 
     def update_write_weighting(self, lookup_weighting, allocation_weighting, write_gate, allocation_gate):
@@ -217,7 +219,7 @@ class Memory:
         return updated_precedence_vector
 
 
-    def update_link_matrix(self, precedence_vector, link_matrix, write_weighting):
+    def update_link_matrices(self, precedence_vector, forward_link_matrix, backward_link_matrix, write_weighting):
         """
         updates and returns the temporal link matrix for the latest write
         given the precedence vector and the link matrix from previous step
@@ -226,7 +228,9 @@ class Memory:
         ----------
         precedence_vector: Tensor (batch_size, words_num)
             the precedence vector from the last time step
-        link_matrix: Tensor (batch_size, words_num, words_num)
+        forward_link_matrix: Tensor (batch_size, words_num, K)
+            the link matrix form the last step
+        backward_link_matrix: Tensor (batch_size, words_num, K)
             the link matrix form the last step
         write_weighting: Tensor (batch_size, words_num)
             the latest write_weighting for the memory
@@ -239,13 +243,18 @@ class Memory:
         precedence_vector = tf.expand_dims(precedence_vector, 1)
 
         reset_factor = 1 - utility.pairwise_add(write_weighting, is_batch=True)
-        updated_link_matrix = reset_factor * link_matrix + tf.matmul(write_weighting, precedence_vector)
-        updated_link_matrix = (1 - self.I) * updated_link_matrix  # eliminates self-links
 
-        return updated_link_matrix
+        updated_forward_link_matrix = forward_link_matrix
+        updated_backward_link_matrix = backward_link_matrix
+
+        # TODO: Update these according to SAM
+        # updated_link_matrix = reset_factor * link_matrix + tf.matmul(write_weighting, precedence_vector)
+        # updated_link_matrix = (1 - self.I) * updated_link_matrix  # eliminates self-links
+
+        return updated_forward_link_matrix, updated_backward_link_matrix
 
 
-    def get_directional_weightings(self, read_weightings, link_matrix):
+    def get_directional_weightings(self, read_weightings, forward_link_matrix, backward_link_matrix):
         """
         computes and returns the forward and backward reading weightings
         given the read_weightings from the previous step
@@ -254,16 +263,19 @@ class Memory:
         ----------
         read_weightings: Tensor (batch_size, words_num, read_heads)
             the read weightings from the last time step
-        link_matrix: Tensor (batch_size, words_num, words_num)
-            the temporal link matrix
+        forward_link_matrix: Tensor (batch_size, words_num, K)
+            the forward link matrix
+        backward_link_matrix: Tensor (batch_size, words_num, K)
+            the backward link matrix
 
         Returns: Tuple
             forward weighting: Tensor (batch_size, words_num, read_heads),
             backward weighting: Tensor (batch_size, words_num, read_heads)
         """
 
-        forward_weighting = tf.matmul(link_matrix, read_weightings)
-        backward_weighting = tf.matmul(link_matrix, read_weightings, adjoint_a=True)
+        #TODO: Fix these to correspond to the corrected (word_num x K) dimensions instead of (word_num x word_num)
+        forward_weighting = tf.matmul(forward_link_matrix, read_weightings)
+        backward_weighting = tf.matmul(backward_link_matrix, read_weightings, adjoint_a=True)
 
         return forward_weighting, backward_weighting
 
@@ -308,15 +320,13 @@ class Memory:
         Returns: Tensor (word_size, read_heads)
         """
 
-        tf.argmax
-
         updated_read_vectors = tf.matmul(memory_matrix, read_weightings, adjoint_a=True)
 
         return updated_read_vectors
 
 
     def write(self, memory_matrix, usage_vector, read_weightings, write_weighting,
-              precedence_vector, link_matrix,  key, strength, free_gates,
+              precedence_vector, forward_link_matrix, backward_link_matrix,  key, strength, free_gates,
               allocation_gate, write_gate, write_vector, erase_vector):
         """
         defines the complete pipeline of writing to memory gievn the write variables
@@ -335,8 +345,10 @@ class Memory:
             the write_weighting from the last time step
         precedence_vector: Tensor (batch_size, words_num)
             the precedence vector from the last time step
-        link_matrix: Tensor (batch_size, words_num, words_num)
-            the link_matrix from previous step
+        forward_link_matrix: Tensor (batch_size, words_num, K)
+            the forward_link_matrix from previous step
+        backward_link_matrix: Tensor (batch_size, words_num, K)
+            the backward_link_matrix from previous step
         key: Tensor (batch_size, word_size, 1)
             the key to query the memory location with
         strength: (batch_size, 1)
@@ -369,13 +381,13 @@ class Memory:
         allocation_weighting = self.get_allocation_weighting(sorted_usage, free_list)
         new_write_weighting = self.update_write_weighting(lookup_weighting, allocation_weighting, write_gate, allocation_gate)
         new_memory_matrix = self.update_memory(memory_matrix, new_write_weighting, write_vector, erase_vector)
-        new_link_matrix = self.update_link_matrix(precedence_vector, link_matrix, new_write_weighting)
+        new_forward_link_matrix, new_backward_link_matrix = self.update_link_matrices(precedence_vector, forward_link_matrix, backward_link_matrix, new_write_weighting)
         new_precedence_vector = self.update_precedence_vector(precedence_vector, new_write_weighting)
 
-        return new_usage_vector, new_write_weighting, new_memory_matrix, new_link_matrix, new_precedence_vector
+        return new_usage_vector, new_write_weighting, new_memory_matrix, new_forward_link_matrix, new_backward_link_matrix, new_precedence_vector
 
 
-    def read(self, memory_matrix, read_weightings, keys, strengths, link_matrix, read_modes):
+    def read(self, memory_matrix, read_weightings, keys, strengths, forward_link_matrix, backward_link_matrix, read_modes):
         """
         defines the complete pipeline for reading from memory
 
@@ -389,8 +401,10 @@ class Memory:
             the kyes to query the memory locations with
         strengths: Tensor (batch_size, read_heads)
             the strength of each read key
-        link_matrix: Tensor (batch_size, words_num, words_num)
-            the updated link matrix from the last writing
+        forward_link_matrix: Tensor (batch_size, words_num, K)
+            the updated forward link matrix from the last writing
+        backward_link_matrix: Tensor (batch_size, words_num, K)
+            the updated backward link matrix from the last writing
         read_modes: Tensor (batch_size, 3, read_heads)
             the softmax distribution between the three read modes
 
@@ -400,14 +414,8 @@ class Memory:
         """
 
         lookup_weighting = self.get_lookup_weighting(memory_matrix, keys, strengths)
-        forward_weighting, backward_weighting = self.get_directional_weightings(read_weightings, link_matrix)
+        forward_weighting, backward_weighting = self.get_directional_weightings(read_weightings, forward_link_matrix, backward_link_matrix)
         new_read_weightings = self.update_read_weightings(lookup_weighting, forward_weighting, backward_weighting, read_modes)
         new_read_vectors = self.update_read_vectors(memory_matrix, new_read_weightings)
 
         return new_read_weightings, new_read_vectors
-
-
-    def sparse_read(self, memory_matrix, read_weightings, keys, strengths, link_matrix, read_modes, K=8):
-
-        sparse_new_read_vectors = self.update_read_vectors(memory_matrix, sparse_new_read_weightings)
-        return sparse_new_read_weightings, sparse_new_read_vectors
