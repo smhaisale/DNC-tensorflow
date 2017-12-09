@@ -32,7 +32,7 @@ class SparseMemory:
         # a words_num x words_num identity matrix
         self.I = tf.constant(np.identity(words_num, dtype=np.float32))
 
-        # maps the indecies from the 2D array of free list per batch to
+        # maps the indices from the 2D array of free list per batch to
         # their corresponding values in the flat 1D array of ordered_allocation_weighting
         self.index_mapper = tf.constant(
             np.cumsum([0] + [words_num] * (batch_size - 1), dtype=np.int32)[:, np.newaxis]
@@ -49,8 +49,8 @@ class SparseMemory:
             tf.fill([self.batch_size, self.words_num, self.word_size], 1e-6),   # initial memory matrix
             tf.zeros([self.batch_size, self.words_num, ]),                      # initial usage vector
             tf.zeros([self.batch_size, self.words_num, ]),                      # initial precedence vector
-            tf.zeros([self.batch_size, self.words_num, self.K]),                # initial forward_link matrix
-            tf.zeros([self.batch_size, self.words_num, self.K]),                # initial backward_link matrix
+            tf.zeros([self.batch_size, self.words_num, self.words_num]),        # initial forward_link matrix
+            tf.zeros([self.batch_size, self.words_num, self.words_num]),        # initial backward_link matrix
             tf.fill([self.batch_size, self.words_num, ], 1e-6),                 # initial write weighting
             tf.fill([self.batch_size, self.words_num, self.read_heads], 1e-6),  # initial read weightings
             tf.fill([self.batch_size, self.word_size, self.read_heads], 1e-6),  # initial read vectors
@@ -239,17 +239,15 @@ class SparseMemory:
             the updated temporal link matrix
         """
 
-        write_weighting = tf.expand_dims(write_weighting, 2)
-        precedence_vector = tf.expand_dims(precedence_vector, 1)
+        write_weighting_i = tf.expand_dims(write_weighting, 2)
+        precedence_vector_j = tf.expand_dims(precedence_vector, 1)
 
-        reset_factor = 1 - utility.pairwise_add(write_weighting, is_batch=True)
+        # TODO: Need to use below for backward link matrix but gradients NaN out (why?)
+        write_weighting_j = tf.expand_dims(write_weighting, 1)
+        precedence_vector_i = tf.expand_dims(precedence_vector, 2)
 
-        updated_forward_link_matrix = forward_link_matrix
-        updated_backward_link_matrix = backward_link_matrix
-
-        # TODO: Update these according to SAM
-        # updated_link_matrix = reset_factor * link_matrix + tf.matmul(write_weighting, precedence_vector)
-        # updated_link_matrix = (1 - self.I) * updated_link_matrix  # eliminates self-links
+        updated_forward_link_matrix = (1 - write_weighting_i) * forward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
+        updated_backward_link_matrix = (1 - write_weighting_i) * backward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
 
         return updated_forward_link_matrix, updated_backward_link_matrix
 
@@ -273,7 +271,6 @@ class SparseMemory:
             backward weighting: Tensor (batch_size, words_num, read_heads)
         """
 
-        #TODO: Fix these to correspond to the corrected (word_num x K) dimensions instead of (word_num x word_num)
         forward_weighting = tf.matmul(forward_link_matrix, read_weightings)
         backward_weighting = tf.matmul(backward_link_matrix, read_weightings, adjoint_a=True)
 
