@@ -58,7 +58,7 @@ class SparseMemory:
 
     def get_lookup_weighting(self, memory_matrix, keys, strengths):
         """
-        retrives a content-based adderssing weighting given the keys
+        retrieves a content-based addressing weighting given the keys
 
         Parameters:
         ----------
@@ -76,12 +76,36 @@ class SparseMemory:
         normalized_memory = tf.nn.l2_normalize(memory_matrix, 2)
         normalized_keys = tf.nn.l2_normalize(keys, 1)
 
-        similiarity = tf.matmul(normalized_memory, normalized_keys)
+        similarity = tf.matmul(normalized_memory, normalized_keys)
         strengths = tf.expand_dims(strengths, 1)
 
-        return tf.nn.softmax(similiarity * strengths, 1)
+        return tf.nn.softmax(similarity * strengths, 1)
 
 
+    def get_interpolation_weighting(self, usage_vector, read_weightings, write_weighting, free_gates):
+        """
+
+        Args:
+        	usage_vector:
+        	read_weightings:
+        	write_weighting:
+        	free_gates:
+
+        Returns:
+
+        """
+        retention_vector = tf.reduce_prod(1 - read_weightings * free_gates, 2)
+        recently_used = 0.005 - (retention_vector + write_weighting)
+        recently_used = tf.minimum(recently_used, 0)
+
+        updated_usage = tf.where(tf.equal(recently_used, 0), tf.fill(tf.shape(usage_vector), 1e-16), usage_vector)
+
+        least_recently_used = tf.reduce_max(updated_usage)
+        interpolation_weighting = tf.where(tf.equal(least_recently_used, updated_usage), tf.ones(tf.shape(updated_usage)), tf.fill(tf.shape(updated_usage), 1e-16))
+
+        return interpolation_weighting
+
+    # Only used during write
     def update_usage_vector(self, usage_vector, read_weightings, write_weighting, free_gates):
         """
         updates and returns the usgae vector given the values of the free gates
@@ -104,17 +128,19 @@ class SparseMemory:
 
         return updated_usage
 
-
+    # Only used during write
+    # Needs to use a usage vector to compute and return a sparse allocation vector
+    # Usage vector records, for each memory word, number of time steps since that memory word has been accessed
     def get_allocation_weighting(self, sorted_usage, free_list):
         """
-        retreives the writing allocation weighting based on the usage free list
+        retrieves I(U,t) the writing allocation weighting based on the usage free list
 
         Parameters:
         ----------
         sorted_usage: Tensor (batch_size, words_num, )
-            the usage vector sorted ascndingly
+            the usage vector sorted ascendingly
         free_list: Tensor (batch, words_num, )
-            the original indecies of the sorted usage vector
+            the original indices of the sorted usage vector
 
         Returns: Tensor (batch_size, words_num, )
             the allocation weighting for each word in memory
@@ -133,8 +159,8 @@ class SparseMemory:
             flat_unordered_allocation_weighting
         )
 
-        packed_wightings = flat_ordered_weightings.stack()
-        return tf.reshape(packed_wightings, (self.batch_size, self.words_num))
+        packed_weightings = flat_ordered_weightings.stack()
+        return tf.reshape(packed_weightings, (self.batch_size, self.words_num))
 
 
     def update_write_weighting(self, lookup_weighting, allocation_weighting, write_gate, allocation_gate):
@@ -321,7 +347,7 @@ class SparseMemory:
 
         return updated_read_vectors
 
-
+    # allocation_gate is effectively == (1 - interpolation_gate)
     def write(self, memory_matrix, usage_vector, read_weightings, write_weighting,
               precedence_vector, forward_link_matrix, backward_link_matrix,  key, strength, free_gates,
               allocation_gate, write_gate, write_vector, erase_vector):
@@ -376,7 +402,9 @@ class SparseMemory:
         sorted_usage = -1 * sorted_usage
 
         allocation_weighting = self.get_allocation_weighting(sorted_usage, free_list)
-        new_write_weighting = self.update_write_weighting(lookup_weighting, allocation_weighting, write_gate, allocation_gate)
+        interpolation_weighting = self.get_interpolation_weighting(usage_vector, read_weightings, write_weighting, free_gates)
+
+        new_write_weighting = self.update_write_weighting(lookup_weighting, interpolation_weighting, write_gate, allocation_gate)
         new_memory_matrix = self.update_memory(memory_matrix, new_write_weighting, write_vector, erase_vector)
         new_forward_link_matrix, new_backward_link_matrix = self.update_link_matrices(precedence_vector, forward_link_matrix, backward_link_matrix, new_write_weighting)
         new_precedence_vector = self.update_precedence_vector(precedence_vector, new_write_weighting)
