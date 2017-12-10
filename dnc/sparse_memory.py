@@ -346,7 +346,7 @@ class SparseMemory:
         updated_read_vectors = tf.matmul(memory_matrix, read_weightings, adjoint_a=True)
 
         return updated_read_vectors
-    
+
     def write(self, memory_matrix, usage_vector, read_weightings, write_weighting,
               precedence_vector, forward_link_matrix, backward_link_matrix,  key, strength, free_gates,
               allocation_gate, write_gate, write_vector, erase_vector):
@@ -403,7 +403,10 @@ class SparseMemory:
         allocation_weighting = self.get_allocation_weighting(sorted_usage, free_list)
         interpolation_weighting = self.get_interpolation_weighting(usage_vector, read_weightings, write_weighting, free_gates)
 
-        new_write_weighting = self.update_write_weighting(lookup_weighting, interpolation_weighting, write_gate, allocation_gate)
+        # TODO: The below uses writes as in the SAM paper but NANs out (why?!).
+        # new_write_weighting = self.update_write_weighting(lookup_weighting, interpolation_weighting, write_gate, allocation_gate)
+        new_write_weighting = self.update_write_weighting(lookup_weighting, allocation_weighting, write_gate, allocation_gate)
+
         new_memory_matrix = self.update_memory(memory_matrix, new_write_weighting, write_vector, erase_vector)
         new_forward_link_matrix, new_backward_link_matrix = self.update_link_matrices(precedence_vector, forward_link_matrix, backward_link_matrix, new_write_weighting)
         new_precedence_vector = self.update_precedence_vector(precedence_vector, new_write_weighting)
