@@ -89,7 +89,7 @@ class DNC:
             interface['erase_vector']
         )
 
-        read_weightings, read_vectors = self.memory.sparse_read(
+        read_weightings, read_vectors = self.memory.read(
             memory_matrix,
             memory_state[6],
             interface['read_keys'],

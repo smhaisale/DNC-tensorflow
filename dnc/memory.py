@@ -312,10 +312,6 @@ class Memory:
 
         return updated_read_vectors
 
-    def update_sparse_read_vectors(self, memory_matrix, read_weightings):
-        sparse_updated_read_vectors = tf.matmul(memory_matrix, read_weightings, adjoint_a=True, b_is_sparse=Flase)
-        return sparse_updated_read_vectors
-
     def write(self, memory_matrix, usage_vector, read_weightings, write_weighting,
               precedence_vector, link_matrix,  key, strength, free_gates,
               allocation_gate, write_gate, write_vector, erase_vector):
@@ -406,39 +402,3 @@ class Memory:
         new_read_vectors = self.update_read_vectors(memory_matrix, new_read_weightings)
         # import pdb; pdb.set_trace()
         return new_read_weightings, new_read_vectors
-    def slices_to_dims(self,slice_indices):
-      """
-      Args:
-        slice_indices: An [N, k] Tensor mapping to column indices.
-      Returns:
-        An index Tensor with shape [N * k, 2], corresponding to indices suitable for
-        passing to SparseTensor.
-      """
-      slice_indices = tf.cast(slice_indices, tf.int64)
-      # sess = tf.Session()
-      # print(sess.run(slice_indices))
-      num_rows = tf.shape(slice_indices, out_type=tf.int64)[0]
-      row_range = tf.range(num_rows)
-      item_numbers = slice_indices * num_rows + tf.expand_dims(row_range, axis=1)
-      item_numbers_flat = tf.reshape(item_numbers, [-1])
-      return tf.stack([item_numbers_flat % num_rows,
-                       item_numbers_flat // num_rows], axis=1)
-
-    def sparse_read(self, memory_matrix, read_weightings, keys, strengths, link_matrix, read_modes, K=8):
-
-        lookup_weighting = self.get_lookup_weighting(memory_matrix, keys, strengths)
-        forward_weighting, backward_weighting = self.get_directional_weightings(read_weightings, link_matrix)
-        new_read_weightings = self.update_read_weightings(lookup_weighting, forward_weighting, backward_weighting, read_modes)
-
-        new_read_weightings = new_read_weightings[0]
-        new_read_weightings = tf.transpose(new_read_weightings)
-        values, indices = tf.nn.top_k(new_read_weightings, k=8)
-        sparse_range = tf.expand_dims(tf.range(0, indices.get_shape()[0]), 1)
-        sparse_range = tf.tile(sparse_range, [1, k])
-        full_indices = tf.concat(axis=2, values=[tf.expand_dims(sparse_range, 2), tf.expand_dims(indices, 2)])
-        full_indices = tf.reshape(full_indices, [-1, 2])
-        sparse_new_read_weightings = tf.sparse_to_dense(full_indices, new_read_weightings.get_shape(), tf.reshape(values, [-1]), default_value=0., validate_indices=False)
-        sparse_new_read_weightings = tf.transpose(sparse_new_read_weightings)
-        sparse_new_read_weightings = tf.expand_dims(sparse_new_read_weightings, 0)
-        sparse_new_read_vectors = self.update_sparse_read_vectors(memory_matrix, sparse_new_read_weightings)
-        return sparse_new_read_weightings, sparse_new_read_vectors
