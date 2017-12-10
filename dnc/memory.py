@@ -45,11 +45,11 @@ class Memory:
         """
 
         return (
-            tf.fill([self.batch_size, self.words_num, self.word_size], 1e-6),   # initial memory matrix
-            tf.zeros([self.batch_size, self.words_num, ]),                      # initial usage vector
-            tf.zeros([self.batch_size, self.words_num, ]),                      # initial precedence vector
-            tf.zeros([self.batch_size, self.words_num, self.words_num]),        # initial link matrix
-            tf.fill([self.batch_size, self.words_num, ], 1e-6),                 # initial write weighting
+            tf.fill([self.batch_size, self.words_num, self.word_size], 1e-6),  # initial memory matrix
+            tf.zeros([self.batch_size, self.words_num, ]),  # initial usage vector
+            tf.zeros([self.batch_size, self.words_num, ]),  # initial precedence vector
+            tf.zeros([self.batch_size, self.words_num, self.words_num]),  # initial link matrix
+            tf.fill([self.batch_size, self.words_num, ], 1e-6),  # initial write weighting
             tf.fill([self.batch_size, self.words_num, self.read_heads], 1e-6),  # initial read weightings
             tf.fill([self.batch_size, self.word_size, self.read_heads], 1e-6),  # initial read vectors
         )
@@ -131,8 +131,8 @@ class Memory:
             flat_unordered_allocation_weighting
         )
 
-        packed_weightings = flat_ordered_weightings.stack()
-        return tf.reshape(packed_weightings, (self.batch_size, self.words_num))
+        packed_wightings = flat_ordered_weightings.stack()
+        return tf.reshape(packed_wightings, (self.batch_size, self.words_num))
 
 
     def update_write_weighting(self, lookup_weighting, allocation_weighting, write_gate, allocation_gate):
@@ -308,12 +308,9 @@ class Memory:
         Returns: Tensor (word_size, read_heads)
         """
 
-        tf.argmax
-
         updated_read_vectors = tf.matmul(memory_matrix, read_weightings, adjoint_a=True)
 
         return updated_read_vectors
-
 
     def write(self, memory_matrix, usage_vector, read_weightings, write_weighting,
               precedence_vector, link_matrix,  key, strength, free_gates,
@@ -403,11 +400,5 @@ class Memory:
         forward_weighting, backward_weighting = self.get_directional_weightings(read_weightings, link_matrix)
         new_read_weightings = self.update_read_weightings(lookup_weighting, forward_weighting, backward_weighting, read_modes)
         new_read_vectors = self.update_read_vectors(memory_matrix, new_read_weightings)
-
+        # import pdb; pdb.set_trace()
         return new_read_weightings, new_read_vectors
-
-
-    def sparse_read(self, memory_matrix, read_weightings, keys, strengths, link_matrix, read_modes, K=8):
-
-        sparse_new_read_vectors = self.update_read_vectors(memory_matrix, sparse_new_read_weightings)
-        return sparse_new_read_weightings, sparse_new_read_vectors
