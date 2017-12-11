@@ -273,7 +273,7 @@ class SparseMemory:
         precedence_vector_i = tf.expand_dims(precedence_vector, 2)
 
         updated_forward_link_matrix = (1 - write_weighting_i) * forward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
-        updated_backward_link_matrix = (1 - write_weighting_i) * backward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
+        updated_backward_link_matrix = (1 - write_weighting_j) * backward_link_matrix + tf.matmul(write_weighting_j, precedence_vector_i)
 
         return updated_forward_link_matrix, updated_backward_link_matrix
 
@@ -298,7 +298,7 @@ class SparseMemory:
         """
 
         forward_weighting = tf.matmul(forward_link_matrix, read_weightings)
-        backward_weighting = tf.matmul(backward_link_matrix, read_weightings, adjoint_a=True)
+        backward_weighting = tf.matmul(backward_link_matrix, read_weightings)
 
         return forward_weighting, backward_weighting
 
