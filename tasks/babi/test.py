@@ -18,7 +18,7 @@ def load(path):
 
 def onehot(index, size):
     vec = np.zeros(size, dtype=np.float32)
-    vec[index] = 1.0
+    vec[int(index)] = 1.0
     return vec
 
 def prepare_sample(sample, target_code, word_space_size):
@@ -66,7 +66,7 @@ with graph.as_default():
             memory_read_heads=4,
         )
         
-        ncomputer.restore(session, ckpts_dir, 'step-500005')
+        ncomputer.restore(session, ckpts_dir, 'step-1360')
         
         outputs, _ = ncomputer.get_outputs()
         softmaxed = tf.nn.softmax(outputs)

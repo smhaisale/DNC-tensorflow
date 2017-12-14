@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import utility
+import pdb
 
 class SparseMemory:
 
@@ -82,7 +83,7 @@ class SparseMemory:
         return tf.nn.softmax(similarity * strengths, 1)
 
 
-    def get_interpolation_weighting(self, usage_vector, read_weightings, write_weighting, free_gates):
+    def get_interpolation_weighting(self, usage_vector, read_weightings, write_weighting):
         """
 
         Args:
@@ -94,14 +95,14 @@ class SparseMemory:
         Returns:
 
         """
-        retention_vector = tf.reduce_prod(1 - read_weightings * free_gates, 2)
+        retention_vector = tf.reduce_prod(read_weightings, 2)
         recently_used = 0.005 - (retention_vector + write_weighting)
-        recently_used = tf.minimum(recently_used, 0)
+        recently_used = tf.maximum(recently_used, 0)
 
-        updated_usage = tf.where(tf.equal(recently_used, 0), tf.fill(tf.shape(usage_vector), 1e-16), usage_vector)
+        updated_usage = tf.where(tf.equal(recently_used, 0), tf.zeros(tf.shape(usage_vector)), usage_vector + 1)
 
         least_recently_used = tf.reduce_max(updated_usage)
-        interpolation_weighting = tf.where(tf.equal(least_recently_used, updated_usage), tf.ones(tf.shape(updated_usage)), tf.fill(tf.shape(updated_usage), 1e-16))
+        interpolation_weighting = tf.where(tf.equal(least_recently_used, updated_usage), tf.ones(tf.shape(updated_usage)), tf.zeros(tf.shape(updated_usage)))
 
         return interpolation_weighting
 
@@ -124,7 +125,7 @@ class SparseMemory:
         free_gates = tf.expand_dims(free_gates, 1)
 
         retention_vector = tf.reduce_prod(1 - read_weightings * free_gates, 2)
-        updated_usage = (usage_vector + write_weighting - usage_vector * write_weighting)  * retention_vector
+        updated_usage = (usage_vector + write_weighting - usage_vector * write_weighting) * retention_vector
 
         return updated_usage
 
@@ -214,11 +215,11 @@ class SparseMemory:
         # to force matmul to behave as an outer product
         write_weighting = tf.expand_dims(write_weighting, 2)
         write_vector = tf.expand_dims(write_vector, 1)
-        erase_vector = tf.expand_dims(erase_vector, 1)
+        erase_vector = tf.expand_dims(erase_vector, 0)
 
-        erasing = memory_matrix * (1 - tf.matmul(write_weighting, erase_vector))
+        erasing = memory_matrix * erase_vector
         writing = tf.matmul(write_weighting, write_vector)
-        updated_memory = erasing + writing
+        updated_memory = memory_matrix - erasing + writing
 
         return updated_memory
 
@@ -268,12 +269,12 @@ class SparseMemory:
         write_weighting_i = tf.expand_dims(write_weighting, 2)
         precedence_vector_j = tf.expand_dims(precedence_vector, 1)
 
-        # TODO: Need to use below for backward link matrix but gradients NaN out (why?)
         write_weighting_j = tf.expand_dims(write_weighting, 1)
         precedence_vector_i = tf.expand_dims(precedence_vector, 2)
 
         updated_forward_link_matrix = (1 - write_weighting_i) * forward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
-        updated_backward_link_matrix = (1 - write_weighting_j) * backward_link_matrix + tf.matmul(write_weighting_j, precedence_vector_i)
+        updated_backward_link_matrix = (1 - write_weighting_i) * backward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
+        # updated_backward_link_matrix = (1 - write_weighting_j) * backward_link_matrix + tf.matmul(write_weighting_j, precedence_vector_i)
 
         return updated_forward_link_matrix, updated_backward_link_matrix
 
@@ -315,7 +316,7 @@ class SparseMemory:
             the forward direction read weighting
         backward_weighting: Tensor (batch_size, words_num, read_heads)
             the backward direction read weighting
-        read_mode: Tesnor (batch_size, 3, read_heads)
+        read_mode: Tensor (batch_size, 3, read_heads)
             the softmax distribution between the three read modes
 
         Returns: Tensor (batch_size, words_num, read_heads)
@@ -401,7 +402,9 @@ class SparseMemory:
         sorted_usage = -1 * sorted_usage
 
         allocation_weighting = self.get_allocation_weighting(sorted_usage, free_list)
-        interpolation_weighting = self.get_interpolation_weighting(usage_vector, read_weightings, write_weighting, free_gates)
+        interpolation_weighting = self.get_interpolation_weighting(usage_vector, read_weightings, write_weighting)
+
+        erase_vector = tf.transpose(interpolation_weighting) * tf.ones([1, self.word_size])
 
         # TODO: The below uses writes as in the SAM paper but NANs out (why?!).
         # new_write_weighting = self.update_write_weighting(lookup_weighting, interpolation_weighting, write_gate, allocation_gate)

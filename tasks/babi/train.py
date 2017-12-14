@@ -46,7 +46,6 @@ def prepare_sample(sample, target_code, word_space_size):
     )
 
 
-
 if __name__ == '__main__':
 
     dirname = os.path.dirname(__file__)
@@ -56,7 +55,7 @@ if __name__ == '__main__':
 
     llprint("Loading Data ... ")
     lexicon_dict = load(os.path.join(data_dir, 'lexicon-dict.pkl'))
-    data = load(os.path.join(data_dir, 'train', 'qa9_simple-negation_train.txt.pkl'))
+    data = load(os.path.join(data_dir, 'train', 'train.pkl'))
     llprint("Done!\n")
 
     batch_size = 1
@@ -119,7 +118,7 @@ if __name__ == '__main__':
                     gradients[i] = (tf.clip_by_value(grad, -10, 10), var)
             for (grad, var) in gradients:
                 if grad is not None:
-                    summeries.append(tf.summary.histogram(var.name + '/grad', grad))
+                   summeries.append(tf.summary.histogram(var.name + '/grad', grad))
 
             apply_gradients = optimizer.apply_gradients(gradients)
 
@@ -157,7 +156,7 @@ if __name__ == '__main__':
                     sample = np.random.choice(data, 1)
                     input_data, target_output, seq_len, weights = prepare_sample(sample, lexicon_dict['-'], word_space_size)
 
-                    summerize = (i % 100 == 0)
+                    summerize = (i % 10 == 0)
                     take_checkpoint = (i != 0) and (i % end == 0)
                     loss_value, _, summary = session.run([
                         loss,
@@ -171,10 +170,10 @@ if __name__ == '__main__':
                     })
 
                     last_100_losses.append(loss_value)
+
                     if summerize:
                         summerizer.add_summary(summary, i)
 
-                    if summerize:
                         llprint("\n\tAvg. Cross-Entropy: %.7f\n" % (np.mean(last_100_losses)))
 
                         end_time_100 = time.time()
