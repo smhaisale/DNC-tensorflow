@@ -3,6 +3,8 @@ import numpy as np
 import utility
 import pdb
 
+from sparse_utility import *
+
 class SparseMemory:
 
     def __init__(self, words_num=256, word_size=64, read_heads=4, batch_size=1, k=8):
@@ -274,6 +276,8 @@ class SparseMemory:
 
         updated_forward_link_matrix = (1 - write_weighting_i) * forward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
         updated_backward_link_matrix = (1 - write_weighting_i) * backward_link_matrix + tf.matmul(write_weighting_i, precedence_vector_j)
+        updated_forward_link_matrix = force_sparse_top_k_3D(updated_forward_link_matrix)
+        updated_backward_link_matrix = force_sparse_top_k_3D(updated_backward_link_matrix)
         # updated_backward_link_matrix = (1 - write_weighting_j) * backward_link_matrix + tf.matmul(write_weighting_j, precedence_vector_i)
 
         return updated_forward_link_matrix, updated_backward_link_matrix
