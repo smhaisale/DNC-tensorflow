@@ -298,8 +298,13 @@ class SparseMemory:
             backward weighting: Tensor (batch_size, words_num, read_heads)
         """
 
-        forward_weighting = tf.matmul(forward_link_matrix, read_weightings)
-        backward_weighting = tf.matmul(backward_link_matrix, read_weightings)
+        forward_link_matrix_s = tf.squeeze(forward_link_matrix,0)
+        backward_link_matrix_s = tf.squeeze(backward_link_matrix,0)
+        read_weightings_s = tf.squeeze(read_weightings,0)
+        forward_weighting = tf.matmul(forward_link_matrix_s, read_weightings_s, a_is_sparse=True, b_is_sparse=True)
+        backward_weighting = tf.matmul(backward_link_matrix_s, read_weightings_s, a_is_sparse=True, b_is_sparse=True)
+        forward_weighting = tf.expand_dims(forward_weighting,0)
+        backward_weighting = tf.expand_dims(backward_weighting,0)
 
         return forward_weighting, backward_weighting
 
@@ -346,7 +351,7 @@ class SparseMemory:
         # tf cannot sparse multiple rank > 2
         read_weightings_s = tf.squeeze(read_weightings,0)
         memory_matrix_s = tf.squeeze(memory_matrix,0)
-        updated_read_vectors = tf.matmul(memory_matrix_s, read_weightings_s, adjoint_a=True, b_is_sparse=False)
+        updated_read_vectors = tf.matmul(memory_matrix_s, read_weightings_s, adjoint_a=True, b_is_sparse=True)
         updated_read_vectors = tf.expand_dims(updated_read_vectors, 0)
         return updated_read_vectors
 
