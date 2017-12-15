@@ -341,11 +341,13 @@ class SparseMemory:
         read_weightings: Tensor (batch_size, words_num, read_heads)
             the amount of info to read from each memory location by each read head
 
-        Returns: Tensor (word_size, read_heads)
+        Returns: Tensor (batch_size,word_size, read_heads)
         """
-
-        updated_read_vectors = tf.matmul(memory_matrix, read_weightings, adjoint_a=True)
-
+        # tf cannot sparse multiple rank > 2
+        read_weightings_s = tf.squeeze(read_weightings,0)
+        memory_matrix_s = tf.squeeze(memory_matrix,0)
+        updated_read_vectors = tf.matmul(memory_matrix_s, read_weightings_s, adjoint_a=True, b_is_sparse=False)
+        updated_read_vectors = tf.expand_dims(updated_read_vectors, 0)
         return updated_read_vectors
 
     def write(self, memory_matrix, usage_vector, read_weightings, write_weighting,
