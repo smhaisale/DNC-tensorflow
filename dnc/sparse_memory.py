@@ -244,7 +244,7 @@ class SparseMemory:
 
         reset_factor = 1 - tf.reduce_sum(write_weighting, 1, keep_dims=True)
         updated_precedence_vector = reset_factor * precedence_vector + write_weighting
-
+        updated_precedence_vector = force_sparse_top_k_2D(updated_precedence_vector)
         return updated_precedence_vector
 
 
